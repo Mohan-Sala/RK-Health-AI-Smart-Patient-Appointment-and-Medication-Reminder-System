@@ -94,9 +94,11 @@ export type Report = {
 };
 
 // API Helpers
-const API_BASE = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
-  ? "/api"
-  : "http://localhost:5000/api";
+const API_BASE = (import.meta as any).env?.VITE_API_URL
+  ? String((import.meta as any).env.VITE_API_URL).replace(/\/$/, "")
+  : (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
+      ? "/api"
+      : "http://localhost:5000/api");
 
 export const defaultAvatar = "/images/default-avatar.png";
 
