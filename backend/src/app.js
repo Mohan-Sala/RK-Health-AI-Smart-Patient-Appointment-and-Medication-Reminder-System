@@ -35,6 +35,7 @@ app.use(requestLogger);
 
 // 5. Global Rate Limiter
 app.use("/api", rateLimiter);
+app.use(rateLimiter);
 
 // Serve OpenAPI/Swagger documentation
 serveSwaggerDocs(app);
@@ -42,8 +43,9 @@ serveSwaggerDocs(app);
 // 6. Serve static uploads
 app.use("/uploads", express.static("uploads"));
 
-// 7. Base API Router
+// 7. Base API Router (Support both /api and root paths for deployment flexibility)
 app.use("/api", apiRouter);
+app.use("/", apiRouter);
 
 // 8. 404 Error Fallback Handler
 app.use(notFoundHandler);

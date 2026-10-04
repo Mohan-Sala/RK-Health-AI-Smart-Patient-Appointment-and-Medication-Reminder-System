@@ -94,11 +94,18 @@ export type Report = {
 };
 
 // API Helpers
-const API_BASE = (import.meta as any).env?.VITE_API_URL
-  ? String((import.meta as any).env.VITE_API_URL).replace(/\/$/, "")
-  : (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
-      ? "/api"
-      : "http://localhost:5000/api");
+function getApiBase(): string {
+  const envUrl = (import.meta as any).env?.VITE_API_URL;
+  if (envUrl && typeof envUrl === "string" && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, "");
+  }
+  if (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    return "/api";
+  }
+  return "http://localhost:5000/api";
+}
+
+const API_BASE = getApiBase();
 
 export const defaultAvatar = "/images/default-avatar.png";
 
@@ -111,7 +118,12 @@ export async function apiFetch(path: string, method: "GET" | "POST" | "PUT" | "D
     headers["Authorization"] = `Bearer ${token}`;
   }
   
-  const response = await fetch(`${API_BASE}${path}`, {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  const targetUrl = API_BASE.endsWith("/api") && cleanPath.startsWith("/api/")
+    ? `${API_BASE.replace(/\/api$/, "")}${cleanPath}`
+    : `${API_BASE}${cleanPath}`;
+
+  const response = await fetch(targetUrl, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
