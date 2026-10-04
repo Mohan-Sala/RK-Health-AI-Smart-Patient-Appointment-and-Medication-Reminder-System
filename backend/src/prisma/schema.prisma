@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+}
+
+model User {
+  id                    String         @id @default(auto()) @map("_id") @db.ObjectId
+  fullName              String
+  email                 String         @unique
+  passwordHash          String
+  phone                 String?
+  dateOfBirth           DateTime?
+  gender                Gender?
+  profileImage          String?
+  bloodGroup            String?
+  height                String?
+  weight                String?
+  bmi                   Float?
+  allergies             String?
+  medicalConditions     String?
+  insuranceProvider     String?
+  insurance             String?
+  lifestyle             String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  role                  String         @default("patient")
+  specialization        String?
+  hospital              String?
+  availability          String?
+  isVerified            Boolean        @default(false)
+  isActive              Boolean        @default(true)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  activityLogs          ActivityLog[]
+  appointments          Appointment[]
+  medications           Medication[]
+  notifications         Notification[]
+  reports               Report[]
+
+  @@index([createdAt])
+}
+
+model Appointment {
+  id              String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String            @db.ObjectId
+  patientName     String
+  doctorName      String
+  title           String
+  hospital        String?
+  specialization  String?
+  appointmentDate DateTime
+  appointmentTime String
+  visitType       VisitType         @default(Consultation)
+  priority        Priority          @default(Medium)
+  status          AppointmentStatus @default(Upcoming)
+  notes           String?
+  calendarEventId String?
+  calendarLink    String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  aiSummary       AiSummary?
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([appointmentDate])
+  @@index([doctorName])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Medication {
+  id              String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String            @db.ObjectId
+  medicineName    String
+  dosage          String
+  strength        String?
+  medicineType    String?
+  frequency       String?
+  foodPreference  String?
+  startDate       DateTime
+  endDate         DateTime
+  reminderTime    String
+  phoneNumber     String?
+  reminderEnabled Boolean           @default(true)
+  status          MedicationStatus  @default(Pending)
+  disease         String?
+  prescribedBy    String?
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminders       ReminderHistory[]
+
+  @@index([userId])
+  @@index([medicineName])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AiSummary {
+  id                     String      @id @default(auto()) @map("_id") @db.ObjectId
+  appointmentId          String      @unique @db.ObjectId
+  summary                String
+  visitOverview          String?
+  medicalExplanation     String?
+  medicationInstructions String?
+  followUpAdvice         String?
+  recommendations        String?
+  generatedBy            String      @default("AI Assistant")
+  generatedAt            DateTime    @default(now())
+  appointment            Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  title       String
+  reportType  String?
+  reportPath  String
+  generatedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String           @db.ObjectId
+  title     String
+  message   String
+  type      NotificationType @default(System)
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  module      String
+  action      String
+  description String
+  ipAddress   String?
+  device      String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model ReminderHistory {
+  id               String       @id @default(auto()) @map("_id") @db.ObjectId
+  medicationId     String       @db.ObjectId
+  reminderType     ReminderType @default(SMS)
+  status           String
+  deliveryProvider String?
+  deliveryTime     DateTime?
+  response         String?
+  createdAt        DateTime     @default(now())
+  medication       Medication   @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+
+  @@index([medicationId])
+  @@index([createdAt])
+}
+
+enum Gender {
+  Male
+  Female
+  Other
+}
+
+enum VisitType {
+  Consultation
+  Routine
+  Emergency
+  Follow_up
+}
+
+enum Priority {
+  Low
+  Medium
+  High
+}
+
+enum AppointmentStatus {
+  Upcoming
+  Completed
+  Cancelled
+}
+
+enum MedicationStatus {
+  Pending
+  Taken
+  Skipped
+  Missed
+}
+
+enum ReminderType {
+  SMS
+  Push
+  Email
+}
+
+enum NotificationType {
+  Appointment
+  Medication
+  AI
+  Report
+  System
+}
