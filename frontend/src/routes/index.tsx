@@ -17,7 +17,10 @@ import {
   Shield,
   Clock,
   Sparkles,
+  Moon,
+  Sun,
 } from "lucide-react";
+import { useTheme } from "@/components/theme-provider";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -57,6 +60,7 @@ function FeatureCard({
 function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { theme, toggle } = useTheme();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -95,6 +99,18 @@ function LandingPage() {
 
           {/* Action buttons */}
           <div className="hidden md:flex items-center gap-3">
+            <button
+              onClick={toggle}
+              className="h-10 w-10 grid place-items-center rounded-xl border border-border/80 hover:bg-hover text-foreground/80 hover:text-foreground transition-colors cursor-pointer"
+              aria-label="Toggle theme"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? (
+                <Sun className="h-[18px] w-[18px] text-amber-400" />
+              ) : (
+                <Moon className="h-[18px] w-[18px] text-foreground/80" />
+              )}
+            </button>
             <Link
               to="/login"
               className="text-[13.5px] font-semibold text-foreground/90 hover:text-primary hover:bg-hover px-4 py-2 rounded-xl transition"
@@ -109,13 +125,27 @@ function LandingPage() {
             </Link>
           </div>
 
-          {/* Mobile hamburger toggle */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden h-10 w-10 rounded-xl hover:bg-hover grid place-items-center text-foreground transition-colors"
-          >
-            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          {/* Mobile hamburger & theme toggle */}
+          <div className="flex md:hidden items-center gap-2">
+            <button
+              onClick={toggle}
+              className="h-10 w-10 grid place-items-center rounded-xl border border-border/80 hover:bg-hover text-foreground/80 hover:text-foreground transition-colors cursor-pointer"
+              aria-label="Toggle theme"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? (
+                <Sun className="h-[18px] w-[18px] text-amber-400" />
+              ) : (
+                <Moon className="h-[18px] w-[18px] text-foreground/80" />
+              )}
+            </button>
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="h-10 w-10 rounded-xl hover:bg-hover grid place-items-center text-foreground transition-colors"
+            >
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Dropdown menu */}

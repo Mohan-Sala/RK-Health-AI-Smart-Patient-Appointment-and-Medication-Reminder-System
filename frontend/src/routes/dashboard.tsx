@@ -1058,14 +1058,6 @@ function Dashboard() {
         <AiSummaryPreview />
       </div>
 
-      {/* Floating Quick Add */}
-      <button
-        aria-label="Quick add"
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-[var(--shadow-hover)] grid place-items-center hover:scale-105 active:scale-95 transition-transform"
-      >
-        <Plus className="h-6 w-6" strokeWidth={2.5} />
-      </button>
-
       {/* Decorative unused refs to avoid lint */}
       <span className="hidden">
         <StickyNote /> <PillBottle />
