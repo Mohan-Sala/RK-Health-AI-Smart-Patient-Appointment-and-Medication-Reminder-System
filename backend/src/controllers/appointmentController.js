@@ -4,6 +4,9 @@ import { NotFoundError, BadRequestError } from "../utils/customError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "../services/calendarService.js";
 import { createNotification } from "../services/notificationService.js";
+import { sendSms, formatToE164 } from "../services/twilioService.js";
+import { logger } from "../config/logger.js";
+import dayjs from "dayjs";
 
 /**
  * Create a new appointment
@@ -80,6 +83,53 @@ export const createAppointment = asyncHandler(async (req, res) => {
       description: `Created appointment "${title}" with ${doctorName}.`,
     },
   });
+
+  // 5. Automatically dispatch SMS confirmation to patient
+  try {
+    const patientUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { phone: true, fullName: true },
+    });
+    const rawPhone = req.body.phoneNumber || req.body.phone || patientUser?.phone || req.user.phone;
+
+    // Update user phone number if newly provided in form
+    if ((req.body.phoneNumber || req.body.phone) && (!patientUser?.phone || patientUser?.phone !== rawPhone)) {
+      try {
+        const formatted = formatToE164(rawPhone);
+        if (formatted) {
+          await prisma.user.update({
+            where: { id: req.user.id },
+            data: { phone: formatted },
+          });
+        }
+      } catch {}
+    }
+
+    if (rawPhone) {
+      const patientFirstName = (patientName || patientUser?.fullName || req.user.fullName || "Patient").split(" ")[0];
+      const dateFormatted = dayjs(appointment.appointmentDate).format("YYYY-MM-DD");
+      const smsBody = `Hello ${patientFirstName},\nYour appointment has been successfully scheduled with Dr. ${doctorName} at ${hospital || "Clinic"} on ${dateFormatted} at ${appointmentTime}.\nTitle: ${title}\n- RK Health`;
+
+      const twilioRes = await sendSms(rawPhone, smsBody);
+      if (twilioRes.success) {
+        logger.info(`✉️ Auto-confirmation SMS dispatched to ${twilioRes.phone} for appointment ${appointment.id}`);
+        await prisma.activityLog.create({
+          data: {
+            userId: req.user.id,
+            module: "Appointment",
+            action: "SMS_AUTO_CONFIRMATION",
+            description: `Auto-sent confirmation SMS to ${twilioRes.phone} for appointment "${title}".`,
+          },
+        });
+      } else {
+        logger.warn(`⚠️ Auto-confirmation SMS delivery skipped: ${twilioRes.error}`);
+      }
+    } else {
+      logger.info(`ℹ️ Auto-confirmation SMS skipped: No phone number registered for user ${req.user.id}`);
+    }
+  } catch (smsErr) {
+    logger.warn(`⚠️ Error in auto-confirmation SMS handler: ${smsErr.message}`);
+  }
 
   res.status(201).json(
     successResponse("Appointment created successfully", appointment, 201)
@@ -228,9 +278,18 @@ export const updateAppointment = asyncHandler(async (req, res) => {
   // 2. Format update payload
   const updateData = { ...req.body };
   delete updateData.rescheduleReason;
+  delete updateData.phone;
+  delete updateData.phoneNumber;
   if (updateData.appointmentDate) {
     updateData.appointmentDate = new Date(updateData.appointmentDate);
   }
+
+  // Check if date or time changed
+  const oldDateStr = dayjs(existing.appointmentDate).format("YYYY-MM-DD");
+  const newDateStr = req.body.appointmentDate ? dayjs(req.body.appointmentDate).format("YYYY-MM-DD") : oldDateStr;
+  const oldTimeStr = existing.appointmentTime;
+  const newTimeStr = req.body.appointmentTime || oldTimeStr;
+  const isRescheduled = oldDateStr !== newDateStr || oldTimeStr !== newTimeStr;
 
   // 3. Update database
   const appointment = await prisma.appointment.update({
@@ -252,28 +311,76 @@ export const updateAppointment = asyncHandler(async (req, res) => {
     });
   }
 
-  // 5. Send status/updated notification
-  if (req.user.role === "doctor" && existing.userId !== req.user.id) {
-    const isRescheduled = req.body.appointmentDate || req.body.appointmentTime;
-    if (isRescheduled) {
-      const newDateStr = req.body.appointmentDate
-        ? new Date(req.body.appointmentDate).toISOString().slice(0, 10)
-        : existing.appointmentDate.toISOString().slice(0, 10);
-      const newTimeStr = req.body.appointmentTime || existing.appointmentTime;
-      await createNotification(
-        existing.userId,
-        "Appointment Rescheduled by Doctor",
-        `Dr. ${req.user.fullName} has rescheduled your appointment "${existing.title}" to ${newDateStr} at ${newTimeStr} based on availability.${req.body.rescheduleReason ? " Reason: " + req.body.rescheduleReason : ""}`,
-        "Appointment"
-      );
+  // 5. Send status/updated notification & Auto-dispatch SMS
+  if (isRescheduled) {
+    const isDoctor = req.user.role === "doctor" && existing.userId !== req.user.id;
+    const notifTitle = isDoctor ? "Appointment Rescheduled by Doctor" : "Appointment Rescheduled";
+    const notifMsg = isDoctor
+      ? `Dr. ${req.user.fullName} has rescheduled your appointment "${existing.title}" to ${newDateStr} at ${newTimeStr}.${req.body.rescheduleReason ? " Reason: " + req.body.rescheduleReason : ""}`
+      : `Your appointment "${existing.title}" with ${appointment.doctorName} has been rescheduled to ${newDateStr} at ${newTimeStr}.`;
+
+    await createNotification(
+      existing.userId,
+      notifTitle,
+      notifMsg,
+      "Appointment"
+    );
+
+    // Auto-dispatch SMS notification to the patient
+    try {
+      const patientUser = await prisma.user.findUnique({
+        where: { id: existing.userId },
+        select: { phone: true, fullName: true },
+      });
+      const patientPhone = req.body.phoneNumber || req.body.phone || patientUser?.phone;
+
+      if (patientPhone) {
+        const patientFirstName = (existing.patientName || patientUser?.fullName || "Patient").split(" ")[0];
+        const doctorDisplay = appointment.doctorName.startsWith("Dr.") ? appointment.doctorName : `Dr. ${appointment.doctorName}`;
+        const reasonLine = req.body.rescheduleReason ? `\nReason: ${req.body.rescheduleReason}` : "";
+        const smsBody = `Hello ${patientFirstName},\nYour appointment "${appointment.title}" with ${doctorDisplay} has been rescheduled to ${newDateStr} at ${newTimeStr} (${appointment.hospital || "Clinic"}).${reasonLine}\n- RK Health`;
+
+        const twilioRes = await sendSms(patientPhone, smsBody);
+        if (twilioRes.success) {
+          logger.info(`✉️ Auto-reschedule SMS sent to ${twilioRes.phone} for appointment ${appointment.id}`);
+          await prisma.activityLog.create({
+            data: {
+              userId: existing.userId,
+              module: "Appointment",
+              action: "SMS_AUTO_RESCHEDULE",
+              description: `Auto-sent reschedule SMS to ${twilioRes.phone} for appointment "${appointment.title}".`,
+            },
+          });
+        } else {
+          logger.warn(`⚠️ Auto-reschedule SMS delivery skipped: ${twilioRes.error}`);
+        }
+      }
+    } catch (smsErr) {
+      logger.warn(`⚠️ Error dispatching auto reschedule SMS: ${smsErr.message}`);
     }
   } else if (updateData.status === "Cancelled" && existing.status !== "Cancelled") {
     await createNotification(
       existing.userId,
       "Appointment Cancelled",
-      `Your appointment with ${appointment.doctorName} on ${appointment.appointmentDate.toISOString().slice(0, 10)} has been cancelled.`,
+      `Your appointment with ${appointment.doctorName} on ${oldDateStr} at ${oldTimeStr} has been cancelled.`,
       "Appointment"
     );
+
+    // Send cancellation SMS to patient
+    try {
+      const patientUser = await prisma.user.findUnique({
+        where: { id: existing.userId },
+        select: { phone: true, fullName: true },
+      });
+      const patientPhone = patientUser?.phone;
+      if (patientPhone) {
+        const patientFirstName = (existing.patientName || patientUser?.fullName || "Patient").split(" ")[0];
+        const smsBody = `Hello ${patientFirstName},\nYour appointment "${appointment.title}" with Dr. ${appointment.doctorName} on ${oldDateStr} at ${oldTimeStr} has been cancelled.\n- RK Health`;
+        await sendSms(patientPhone, smsBody);
+      }
+    } catch (smsErr) {
+      logger.warn(`⚠️ Error dispatching cancellation SMS: ${smsErr.message}`);
+    }
   } else {
     await createNotification(
       existing.userId,

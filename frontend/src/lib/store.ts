@@ -194,6 +194,8 @@ function mapAppointmentToBackend(app: Partial<Appointment>) {
     specialization: app.spec || null,
     appointmentDate: app.date,
     appointmentTime: app.time,
+    phone: app.phone || null,
+    phoneNumber: app.phone || null,
     visitType: app.visitType === "Follow-up" ? "Follow_up" : (app.visitType === "Routine Checkup" ? "Routine" : app.visitType),
     priority: app.priority,
     notes: app.notes || null,

@@ -41,6 +41,14 @@ export const createAppointmentSchema = z.object({
     priority: z
       .enum(["Low", "Medium", "High"])
       .optional(),
+    phone: z
+      .string()
+      .optional()
+      .nullable(),
+    phoneNumber: z
+      .string()
+      .optional()
+      .nullable(),
     notes: z
       .string()
       .optional()
@@ -97,6 +105,18 @@ export const updateAppointmentSchema = z.object({
     status: z
       .enum(["Upcoming", "Completed", "Cancelled"])
       .optional(),
+    phone: z
+      .string()
+      .optional()
+      .nullable(),
+    phoneNumber: z
+      .string()
+      .optional()
+      .nullable(),
+    rescheduleReason: z
+      .string()
+      .optional()
+      .nullable(),
     notes: z
       .string()
       .optional()

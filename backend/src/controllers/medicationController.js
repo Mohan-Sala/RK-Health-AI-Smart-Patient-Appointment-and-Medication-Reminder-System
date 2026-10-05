@@ -3,7 +3,8 @@ import { successResponse } from "../utils/apiResponse.js";
 import { NotFoundError, BadRequestError } from "../utils/customError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { createNotification } from "../services/notificationService.js";
-import { formatToE164 } from "../services/twilioService.js";
+import { formatToE164, sendSms } from "../services/twilioService.js";
+import { logger } from "../config/logger.js";
 
 /**
  * Create a new medication
@@ -94,6 +95,34 @@ export const createMedication = asyncHandler(async (req, res) => {
         : `Added new medication "${medicineName}".`,
     },
   });
+
+  // 4. Auto-dispatch SMS to patient if prescribed by doctor
+  if (isDoctor && targetUserId !== req.user.id && finalPhoneNumber) {
+    try {
+      const patientUser = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { fullName: true },
+      });
+      const patientFirstName = (patientUser?.fullName || "Patient").split(" ")[0];
+      const foodText = foodPreference ? `\nPreference: ${foodPreference}` : "";
+      const smsBody = `Hello ${patientFirstName},\nDr. ${req.user.fullName} has prescribed a new medication for you:\n${medicineName} (${dosage})\nTime: ${reminderTime}${foodText}\n- RK Health`;
+
+      const twilioRes = await sendSms(finalPhoneNumber, smsBody);
+      if (twilioRes.success) {
+        logger.info(`✉️ Prescription SMS sent to ${twilioRes.phone} for medication ${medication.id}`);
+        await prisma.activityLog.create({
+          data: {
+            userId: targetUserId,
+            module: "Medication",
+            action: "SMS_AUTO_PRESCRIPTION",
+            description: `Auto-sent prescription SMS to ${twilioRes.phone} for "${medicineName}".`,
+          },
+        });
+      }
+    } catch (smsErr) {
+      logger.warn(`⚠️ Failed to dispatch prescription SMS: ${smsErr.message}`);
+    }
+  }
 
   res.status(201).json(
     successResponse("Medication created successfully", medication, 201)
@@ -303,6 +332,24 @@ export const updateMedication = asyncHandler(async (req, res) => {
       notifMessage,
       "Medication"
     );
+
+    // Auto-dispatch SMS notification to the patient
+    const phoneToNotify = medication.phoneNumber || medication.user?.phone;
+    if (phoneToNotify) {
+      try {
+        const patientFirstName = (medication.user?.fullName || "Patient").split(" ")[0];
+        const smsBody = isDoseAdjusted
+          ? `Hello ${patientFirstName},\nDr. ${req.user.fullName} updated your ${existing.medicineName} dosage to ${req.body.dosage}.${req.body.improvementNote ? ` (${req.body.improvementNote})` : ""}\n- RK Health`
+          : `Hello ${patientFirstName},\nDr. ${req.user.fullName} updated your prescription for ${medication.medicineName} (${medication.dosage}).\n- RK Health`;
+
+        const twilioRes = await sendSms(phoneToNotify, smsBody);
+        if (twilioRes.success) {
+          logger.info(`✉️ Medication update SMS dispatched to ${twilioRes.phone} for medication ${medication.id}`);
+        }
+      } catch (smsErr) {
+        logger.warn(`⚠️ Failed to send medication update SMS: ${smsErr.message}`);
+      }
+    }
   }
 
   // 5. Log activity
